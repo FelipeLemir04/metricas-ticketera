@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
     BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer
@@ -24,6 +24,7 @@ const ICONOS = {
     derecha: 'm8.25 4.5 7.5 7.5-7.5 7.5',
     llave: 'M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z',
     salir: 'M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9',
+    edificio: 'M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21',
 };
 
 function Icono({ nombre, className = 'w-5 h-5' }) {
@@ -159,7 +160,7 @@ function BotonPaginacion({ onClick, disabled, children, etiqueta }) {
 const claseCampo = 'w-full rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 shadow-sm focus:border-blue-500 focus:ring-blue-500';
 const claseEtiqueta = 'block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5';
 
-export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnico, ticketsTabla, listaTecnicos, listaAnios, listaEstados, anioSeleccionado }) {
+export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, listaTecnicos, listaAnios, listaEstados, anioSeleccionado, equipos, equipoSeleccionado, pedidosPorDepartamento }) {
     const { auth } = usePage().props;
     const [vista, setVista] = useState('dashboard');
 
@@ -179,13 +180,21 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
     const [filtroTecnico, setFiltroTecnico] = useState('');
     const [filtroAnioTabla, setFiltroAnioTabla] = useState('');
     const [filtroEstado, setFiltroEstado] = useState('');
+    const [filtroSolicitante, setFiltroSolicitante] = useState('');
     const [filtroFecha, setFiltroFecha] = useState('');
+
+    // Departamentos que aparecen como solicitantes en los tickets del equipo
+    const listaSolicitantes = useMemo(
+        () => [...new Set(ticketsTabla.map(ticket => ticket.Departamento))].sort((a, b) => a.localeCompare(b, 'es')),
+        [ticketsTabla]
+    );
 
     const [paginaActual, setPaginaActual] = useState(1);
     const registrosPorPagina = 15;
 
     const [paginaGrafico, setPaginaGrafico] = useState(1);
     const tecnicosPorPaginaGrafico = 10;
+    const maxDepartamentosGrafico = 10;
 
     const indiceUltimoTecnico = paginaGrafico * tecnicosPorPaginaGrafico;
     const indicePrimerTecnico = indiceUltimoTecnico - tecnicosPorPaginaGrafico;
@@ -194,7 +203,12 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
 
     const handleCambioAnioGraficos = (e) => {
         const anio = e.target.value;
-        router.get('/', { anio: anio }, { preserveState: true, preserveScroll: true });
+        router.get('/', { anio: anio, equipo: equipoSeleccionado.id }, { preserveState: true, preserveScroll: true });
+    };
+
+    // Al cambiar de equipo se reinician filtros y paginación (preserveState: false)
+    const handleCambioEquipo = (e) => {
+        router.get('/', { equipo: e.target.value }, { preserveScroll: true });
     };
 
     const ticketsFiltrados = ticketsTabla.filter(ticket => {
@@ -202,8 +216,9 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
         const matchTecnico = filtroTecnico === '' || ticket.Tecnico === filtroTecnico;
         const matchAnio = filtroAnioTabla === '' || String(ticket.anio) === String(filtroAnioTabla);
         const matchEstado = filtroEstado === '' || ticket.Estado === filtroEstado;
+        const matchSolicitante = filtroSolicitante === '' || ticket.Departamento === filtroSolicitante;
         const matchFecha = filtroFecha === '' || ticket.fecha_filtro === filtroFecha;
-        return matchNro && matchTecnico && matchAnio && matchEstado && matchFecha;
+        return matchNro && matchTecnico && matchAnio && matchEstado && matchSolicitante && matchFecha;
     });
 
     const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -215,15 +230,17 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
     const handleFiltroTecnico = (e) => { setFiltroTecnico(e.target.value); setPaginaActual(1); };
     const handleFiltroAnioTabla = (e) => { setFiltroAnioTabla(e.target.value); setPaginaActual(1); };
     const handleFiltroEstado = (e) => { setFiltroEstado(e.target.value); setPaginaActual(1); };
+    const handleFiltroSolicitante = (e) => { setFiltroSolicitante(e.target.value); setPaginaActual(1); };
     const handleFiltroFecha = (e) => { setFiltroFecha(e.target.value); setPaginaActual(1); };
 
-    const hayFiltrosTabla = filtroNro || filtroTecnico || filtroAnioTabla || filtroEstado || filtroFecha;
+    const hayFiltrosTabla = filtroNro || filtroTecnico || filtroAnioTabla || filtroEstado || filtroSolicitante || filtroFecha;
 
     const limpiarFiltrosTabla = () => {
         setFiltroNro('');
         setFiltroTecnico('');
         setFiltroAnioTabla('');
         setFiltroEstado('');
+        setFiltroSolicitante('');
         setFiltroFecha('');
         setPaginaActual(1);
     };
@@ -249,7 +266,7 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
     return (
         <div className={darkMode ? 'dark' : ''}>
             <div className="flex h-screen font-sans bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors">
-                <Head title="Dashboard Ticketera Tics" />
+                <Head title={`Dashboard · ${equipoSeleccionado.nombre}`} />
 
                 {/* BARRA LATERAL */}
                 <aside className="hidden md:flex w-64 shrink-0 flex-col bg-[#002b49] dark:bg-slate-900 dark:border-r dark:border-slate-800 text-white">
@@ -259,7 +276,7 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                             alt="Hospital Universitario"
                             className="w-full h-auto object-contain max-h-14 filter brightness-0 invert"
                         />
-                        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200/70">TICS · Informática</p>
+                        <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-200/70">Panel de tickets</p>
                     </div>
                     <nav className="flex-1 px-3 py-5 space-y-1">
                         {navegacion.map(item => (
@@ -318,13 +335,29 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                     <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 sm:px-8 py-4">
                         <div className="flex flex-wrap items-center justify-between gap-4">
                             <div>
-                                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-sky-400">Departamento de Informática</p>
+                                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-sky-400">{equipoSeleccionado.nombre}</p>
                                 <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
                                     {vista === 'dashboard' ? 'Gráficos y métricas' : 'Tabla de tickets'}
                                 </h1>
                             </div>
 
-                            <div className="flex items-center gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
+                                {equipos.length > 1 && (
+                                    <label className="flex items-center gap-2">
+                                        <Icono nombre="edificio" className="w-4 h-4 text-slate-400" />
+                                        <span className="sr-only">Equipo</span>
+                                        <select
+                                            value={equipoSeleccionado.id}
+                                            onChange={handleCambioEquipo}
+                                            className="max-w-[16rem] rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 py-1.5 pl-3 pr-9 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                        >
+                                            {equipos.map(d => (
+                                                <option key={d.id} value={d.id}>{d.nombre}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                )}
+
                                 {vista === 'dashboard' && (
                                     <label className="flex items-center gap-2">
                                         <Icono nombre="calendario" className="w-4 h-4 text-slate-400" />
@@ -465,18 +498,7 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                                     </div>
 
                                     {/* GRÁFICOS */}
-                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                                        <Tarjeta
-                                            titulo="Incidencias por tipo de problema"
-                                            subtitulo={`${porTipoProblema.length} categorías · ${periodo}`}
-                                        >
-                                            {porTipoProblema.length > 0 ? (
-                                                <GraficoBarrasHorizontal datos={porTipoProblema} campoEtiqueta="tipo" unidad="tickets" tema={tema} />
-                                            ) : (
-                                                <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Sin datos para el período seleccionado.</p>
-                                            )}
-                                        </Tarjeta>
-
+                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                                         <Tarjeta
                                             titulo="Carga de trabajo"
                                             subtitulo={`Tickets resueltos por técnico · ${periodo}`}
@@ -508,6 +530,24 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                                                 <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Sin tickets cerrados en el período seleccionado.</p>
                                             )}
                                         </Tarjeta>
+
+                                        <Tarjeta
+                                            titulo="Pedidos por departamento"
+                                            subtitulo={`Áreas del hospital que más solicitan al equipo · ${periodo}`}
+                                        >
+                                            {pedidosPorDepartamento.length > 0 ? (
+                                                <>
+                                                    <GraficoBarrasHorizontal datos={pedidosPorDepartamento.slice(0, maxDepartamentosGrafico)} campoEtiqueta="departamento" unidad="tickets" tema={tema} />
+                                                    {pedidosPorDepartamento.length > maxDepartamentosGrafico && (
+                                                        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                                                            Se muestran los {maxDepartamentosGrafico} departamentos con más pedidos de {pedidosPorDepartamento.length}.
+                                                        </p>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Sin pedidos en el período seleccionado.</p>
+                                            )}
+                                        </Tarjeta>
                                     </div>
                                 </>
                             )}
@@ -516,7 +556,7 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                                 <>
                                     {/* FILTROS */}
                                     <Tarjeta>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                                             <div>
                                                 <label className={claseEtiqueta}>Nro de ticket</label>
                                                 <div className="relative">
@@ -564,7 +604,17 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                                             </div>
 
                                             <div>
-                                                <label className={claseEtiqueta}>Fecha específica</label>
+                                                <label className={claseEtiqueta}>Solicitante</label>
+                                                <select value={filtroSolicitante} onChange={handleFiltroSolicitante} className={claseCampo}>
+                                                    <option value="">Todos los solicitantes</option>
+                                                    {listaSolicitantes.map(solicitante => (
+                                                        <option key={solicitante} value={solicitante}>{solicitante}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className={claseEtiqueta}>Fecha de creación</label>
                                                 <input type="date" value={filtroFecha} onChange={handleFiltroFecha} className={claseCampo} />
                                             </div>
                                         </div>
@@ -592,7 +642,7 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                                             <table className="min-w-full text-sm">
                                                 <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800">
                                                     <tr>
-                                                        {['Nro', 'Fecha', 'Asunto', 'Tipo', 'Estado', 'Prioridad', 'Técnico'].map(columna => (
+                                                        {['Nro', 'Creación', 'Cierre', 'Asunto', 'Solicitante', 'Tipo', 'Estado', 'Prioridad', 'Técnico'].map(columna => (
                                                             <th key={columna} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 whitespace-nowrap">
                                                                 {columna}
                                                             </th>
@@ -607,7 +657,9 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                                                                 <tr key={ticket.Nro_Ticket} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                                                     <td className="px-5 py-3.5 whitespace-nowrap font-semibold tabular-nums text-slate-900 dark:text-white">#{ticket.Nro_Ticket}</td>
                                                                     <td className="px-5 py-3.5 whitespace-nowrap tabular-nums text-slate-500 dark:text-slate-400">{ticket.Fecha_Creacion}</td>
+                                                                    <td className="px-5 py-3.5 whitespace-nowrap tabular-nums text-slate-500 dark:text-slate-400">{ticket.Fecha_Cierre ?? <span className="text-slate-300 dark:text-slate-600">—</span>}</td>
                                                                     <td className="px-5 py-3.5 text-slate-800 dark:text-slate-200 truncate max-w-xs" title={ticket.Asunto}>{ticket.Asunto}</td>
+                                                                    <td className="px-5 py-3.5 whitespace-nowrap text-slate-500 dark:text-slate-400">{ticket.Departamento}</td>
                                                                     <td className="px-5 py-3.5 whitespace-nowrap text-slate-500 dark:text-slate-400">{ticket.Tipo_Problema}</td>
                                                                     <td className="px-5 py-3.5 whitespace-nowrap">
                                                                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${estilo.badge}`}>
@@ -631,7 +683,7 @@ export default function DashboardTics({ kpis, porTipoProblema, cerradosPorTecnic
                                                         })
                                                     ) : (
                                                         <tr>
-                                                            <td colSpan="7" className="px-6 py-16 text-center">
+                                                            <td colSpan="9"className="px-6 py-16 text-center">
                                                                 <Icono nombre="buscar" className="mx-auto w-8 h-8 text-slate-300 dark:text-slate-600" />
                                                                 <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-300">No se encontraron tickets</p>
                                                                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Prueba ajustando o limpiando los filtros.</p>

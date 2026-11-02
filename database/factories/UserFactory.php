@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\Rol;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -30,7 +31,43 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            'rol' => Rol::Jefe,
+            'equipo_ids' => [],
+            'activo' => true,
         ];
+    }
+
+    /**
+     * Indicate that the user is an administrator.
+     */
+    public function admin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'rol' => Rol::Admin,
+        ]);
+    }
+
+    /**
+     * Indicate that the user is the head of the given teams.
+     *
+     * @param  list<int>  $equipoIds
+     */
+    public function jefeDe(array $equipoIds): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'rol' => Rol::Jefe,
+            'equipo_ids' => $equipoIds,
+        ]);
+    }
+
+    /**
+     * Indicate that the user has been deactivated.
+     */
+    public function inactivo(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'activo' => false,
+        ]);
     }
 
     /**

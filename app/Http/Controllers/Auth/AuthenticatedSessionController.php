@@ -26,14 +26,20 @@ class AuthenticatedSessionController extends Controller
 
     /**
      * Handle an incoming authentication request.
+     *
+     * Cada rol va siempre a su inicio y no a la página "recordada" antes del login: esa página
+     * pudo ser de otro rol (ej. la administración abierta por un admin) y daría 403.
      */
     public function store(LoginRequest $request): RedirectResponse
     {
         $request->authenticate();
 
         $request->session()->regenerate();
+        $request->session()->forget('url.intended');
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        $inicio = $request->user()->isAdmin() ? 'admin.usuarios.index' : 'dashboard';
+
+        return redirect()->route($inicio);
     }
 
     /**

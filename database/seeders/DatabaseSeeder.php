@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\Rol;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -18,9 +19,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Equipo 4 = Informática / TICS en la ticketera
         $dashboardUsers = [
-            ['name' => 'Administrador TICS', 'email' => 'admin@tics.local'],
-            ['name' => 'Usuario TICS', 'email' => 'usuario@tics.local'],
+            ['name' => 'Administrador TICS', 'email' => 'admin@tics.local', 'rol' => Rol::Admin, 'equipo_ids' => []],
+            ['name' => 'Usuario TICS', 'email' => 'usuario@tics.local', 'rol' => Rol::Jefe, 'equipo_ids' => [4]],
         ];
 
         foreach ($dashboardUsers as $dashboardUser) {
