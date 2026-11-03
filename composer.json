@@ -1,8 +1,8 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "hospital-universitario/metricas-ticketera",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Panel de métricas de la ticketera del Hospital Universitario.",
     "keywords": ["laravel", "framework"],
     "license": "MIT",
     "require": {
