@@ -9,6 +9,12 @@ const claseBotonPrimario = 'inline-flex items-center justify-center gap-2 rounde
 const claseBotonSecundario = 'inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors';
 const claseBotonIcono = 'rounded-lg p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors';
 
+const ESTILO_ROL = {
+    admin: 'bg-violet-50 text-violet-700 ring-violet-600/20 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20',
+    director: 'bg-sky-50 text-sky-700 ring-sky-600/20 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20',
+    jefe: 'bg-slate-50 text-slate-700 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-500/20',
+};
+
 const ICONOS = {
     mas: 'M12 4.5v15m7.5-7.5h-15',
     lapiz: 'm16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125',
@@ -160,7 +166,7 @@ function FormularioUsuario({ usuario, equipos, roles, onCerrar }) {
 
                 <div>
                     <span className={claseEtiqueta}>Rol</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {roles.map(rol => (
                             <label
                                 key={rol.valor}
@@ -170,9 +176,7 @@ function FormularioUsuario({ usuario, equipos, roles, onCerrar }) {
                             >
                                 <input type="radio" name="rol" value={rol.valor} checked={data.rol === rol.valor} onChange={() => setData('rol', rol.valor)} className="sr-only" />
                                 <span className="text-sm font-semibold text-slate-900 dark:text-white">{rol.etiqueta}</span>
-                                <span className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                    {rol.valor === 'admin' ? 'Solo administra usuarios. No ve gráficos ni tickets.' : 'Ve los gráficos y tickets que atienden sus equipos.'}
-                                </span>
+                                <span className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{rol.descripcion}</span>
                             </label>
                         ))}
                     </div>
@@ -352,15 +356,15 @@ export default function Usuarios({ usuarios, equipos, roles }) {
                                             </div>
                                         </td>
                                         <td className="px-5 py-3.5 whitespace-nowrap">
-                                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${u.rol === 'admin'
-                                                ? 'bg-violet-50 text-violet-700 ring-violet-600/20 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20'
-                                                : 'bg-slate-50 text-slate-700 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-500/20'}`}>
+                                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${ESTILO_ROL[u.rol] ?? ESTILO_ROL.jefe}`}>
                                                 {etiquetaRol[u.rol] ?? u.rol}
                                             </span>
                                         </td>
                                         <td className="px-5 py-3.5">
                                             {u.rol === 'admin' ? (
                                                 <span className="text-slate-400">No aplica</span>
+                                            ) : u.rol === 'director' ? (
+                                                <span className="text-slate-600 dark:text-slate-300">Todos los equipos</span>
                                             ) : (
                                                 <div className="flex max-w-md flex-wrap gap-1.5">
                                                     {nombresEquipos.slice(0, 3).map(nombre => (

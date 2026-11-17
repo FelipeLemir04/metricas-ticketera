@@ -50,7 +50,7 @@ class AdministracionUsuariosTest extends TestCase
         $response->assertInertia(fn (Assert $page) => $page
             ->component('Admin/Usuarios')
             ->has('usuarios', 2)
-            ->has('equipos', 11)
+            ->has('equipos', 10)
         );
     }
 
@@ -83,6 +83,21 @@ class AdministracionUsuariosTest extends TestCase
 
         $response->assertSessionHasNoErrors();
         $this->assertSame([], User::where('email', 'otro.admin@hu.cl')->firstOrFail()->equiposAsignados());
+    }
+
+    public function test_un_director_se_guarda_sin_equipos(): void
+    {
+        $response = $this->actingAs($this->admin)->post('/admin/usuarios', [
+            'name' => 'Directora General',
+            'email' => 'direccion@hu.cl',
+            'rol' => 'director',
+            'equipo_ids' => [self::RRHH],
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $director = User::where('email', 'direccion@hu.cl')->firstOrFail();
+        $this->assertSame(Rol::Director, $director->rol);
+        $this->assertSame([], $director->equiposAsignados());
     }
 
     public function test_un_jefe_debe_tener_al_menos_un_equipo(): void

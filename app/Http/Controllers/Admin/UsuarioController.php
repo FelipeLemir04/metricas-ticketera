@@ -28,6 +28,7 @@ class UsuarioController extends Controller
             'roles' => collect(Rol::cases())->map(fn (Rol $rol) => [
                 'valor' => $rol->value,
                 'etiqueta' => $rol->etiqueta(),
+                'descripcion' => $rol->descripcion(),
             ]),
         ]);
     }
@@ -96,8 +97,8 @@ class UsuarioController extends Controller
     {
         $validados = $request->validated();
 
-        // El admin no ve tickets, así que no tiene equipos asignados
-        $equipoIds = $validados['rol'] === Rol::Admin->value ? [] : ($validados['equipo_ids'] ?? []);
+        // Solo el jefe tiene equipos asignados: el admin no ve tickets y el director los ve todos
+        $equipoIds = $validados['rol'] === Rol::Jefe->value ? ($validados['equipo_ids'] ?? []) : [];
 
         return [
             'name' => $validados['name'],

@@ -14,8 +14,8 @@ class DashboardController extends Controller
     /**
      * Dashboard de los tickets que atiende el equipo seleccionado.
      *
-     * Un jefe solo ve los equipos que tiene asignados. El admin no ve tickets:
-     * únicamente administra usuarios, así que se le envía a esa sección.
+     * Un jefe solo ve los equipos que tiene asignados y el director general ve todos. El admin
+     * no ve tickets: únicamente administra usuarios, así que se le envía a esa sección.
      */
     public function __invoke(Request $request, TicketeraService $ticketera): Response|RedirectResponse
     {
@@ -27,7 +27,10 @@ class DashboardController extends Controller
 
         $asignados = $user->equiposAsignados();
 
-        $equiposVisibles = Equipo::whereIn('id', $asignados)->orderBy('nombre')->get(['id', 'nombre']);
+        $equiposVisibles = Equipo::query()
+            ->unless($user->veTodosLosEquipos(), fn ($query) => $query->whereIn('id', $asignados))
+            ->orderBy('nombre')
+            ->get(['id', 'nombre']);
 
         abort_if($equiposVisibles->isEmpty(), 403, 'No tienes equipos asignados. Contacta al administrador del panel.');
 
@@ -36,7 +39,9 @@ class DashboardController extends Controller
 
             abort_unless($equiposVisibles->contains('id', $equipoId), 403, 'No tienes acceso a ese equipo.');
         } else {
-            $equipoId = collect($asignados)->first(fn ($id) => $equiposVisibles->contains('id', $id));
+            // El director no tiene equipos asignados: empieza por el primero de la lista
+            $equipoId = collect($asignados)->first(fn ($id) => $equiposVisibles->contains('id', $id))
+                ?? $equiposVisibles->first()->id;
         }
 
         $anioSeleccionado = $request->input('anio');
@@ -46,6 +51,10 @@ class DashboardController extends Controller
             'anioSeleccionado' => $anioSeleccionado ?? '',
             'equipos' => $equiposVisibles,
             'equipoSeleccionado' => $equiposVisibles->firstWhere('id', $equipoId),
+            // Sección "Resumen del hospital": solo para el director general
+            'resumenHospital' => $user->veTodosLosEquipos()
+                ? $ticketera->resumenHospital($equiposVisibles, $anioSeleccionado)
+                : null,
         ]);
     }
 }

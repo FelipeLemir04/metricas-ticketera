@@ -46,6 +46,14 @@ class User extends Authenticatable
     }
 
     /**
+     * El director general ve todos los equipos sin necesidad de tenerlos asignados.
+     */
+    public function veTodosLosEquipos(): bool
+    {
+        return $this->rol === Rol::Director;
+    }
+
+    /**
      * Equipos (ticketeras) que el usuario tiene asignados.
      *
      * @return list<int>

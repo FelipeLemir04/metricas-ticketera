@@ -160,7 +160,241 @@ function BotonPaginacion({ onClick, disabled, children, etiqueta }) {
 const claseCampo = 'w-full rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 shadow-sm focus:border-blue-500 focus:ring-blue-500';
 const claseEtiqueta = 'block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5';
 
-export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, listaTecnicos, listaAnios, listaEstados, anioSeleccionado, equipos, equipoSeleccionado, pedidosPorDepartamento }) {
+// --- RESUMEN: total, tasa de cierre, abiertos y composición por estado ---
+function TarjetaTotales({ titulo, total, estadosKpi }) {
+    const cerrados = estadosKpi.find(e => e.estado === 'Cerrado')?.cantidad || 0;
+
+    return (
+        <Tarjeta>
+            <div className="flex flex-wrap items-end justify-between gap-6">
+                <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-sky-400">
+                        <Icono nombre="bandeja" className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{titulo}</p>
+                        <p className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white">{formatearNumero(total)}</p>
+                    </div>
+                </div>
+                <div className="flex gap-8">
+                    <div>
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Tasa de cierre</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{porcentaje(cerrados, total).toLocaleString('es-CL')}%</p>
+                    </div>
+                    <div>
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Abiertos</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatearNumero(total - cerrados)}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Barra de composición por estado */}
+            {total > 0 && (
+                <div className="mt-6">
+                    <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        {estadosKpi.filter(e => e.cantidad > 0).map(e => (
+                            <div
+                                key={e.estado}
+                                title={`${e.estado}: ${formatearNumero(e.cantidad)} (${porcentaje(e.cantidad, total)}%)`}
+                                style={{ width: `${porcentaje(e.cantidad, total)}%`, minWidth: 4, backgroundColor: getEstiloEstado(e.estado).color }}
+                                className="h-full first:rounded-l-full last:rounded-r-full"
+                            />
+                        ))}
+                    </div>
+                    <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+                        {estadosKpi.map(e => (
+                            <li key={e.estado} className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: getEstiloEstado(e.estado).color }} />
+                                {e.estado}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+        </Tarjeta>
+    );
+}
+
+// --- RESUMEN DEL HOSPITAL (solo director general) ---
+const COLOR_CERRADOS = ESTADOS['Cerrado'].color;
+
+const formatearMes = (mes) => {
+    const [anio, numeroMes] = mes.split('-').map(Number);
+    return new Date(anio, numeroMes - 1, 1).toLocaleDateString('es-CL', { month: 'short', year: '2-digit' });
+};
+
+const COLUMNAS_COMPARATIVA = [
+    { campo: 'nombre', etiqueta: 'Equipo' },
+    { campo: 'total', etiqueta: 'Total' },
+    ...ordenEstados.map(nombreEstado => ({ campo: nombreEstado, etiqueta: nombreEstado, esEstado: true })),
+    { campo: 'tasa', etiqueta: 'Tasa de cierre' },
+];
+
+function TooltipEquipo({ active, payload, label }) {
+    if (!active || !payload?.length) return null;
+    const { cerrados, abiertos } = payload[0].payload;
+    return (
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 shadow-lg">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{formatearNumero(abiertos)} abiertos</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{formatearNumero(cerrados)} cerrados</p>
+        </div>
+    );
+}
+
+function SeccionResumenHospital({ resumen, tema, periodo, anioSeleccionado }) {
+    const [orden, setOrden] = useState({ campo: 'total', descendente: true });
+
+    const filas = resumen.porEquipo.map(equipo => {
+        const cerrados = equipo.por_estado['Cerrado'] || 0;
+        return { ...equipo, cerrados, abiertos: equipo.total - cerrados, tasa: porcentaje(cerrados, equipo.total) };
+    });
+
+    const totalHospital = filas.reduce((suma, fila) => suma + fila.total, 0);
+    const estadosHospital = ordenEstados.map(nombreEstado => ({
+        estado: nombreEstado,
+        cantidad: filas.reduce((suma, fila) => suma + (fila.por_estado[nombreEstado] || 0), 0),
+    }));
+
+    const valorColumna = (fila, campo) => (ordenEstados.includes(campo) ? fila.por_estado[campo] || 0 : fila[campo]);
+    const filasOrdenadas = [...filas].sort((a, b) => {
+        const valorA = valorColumna(a, orden.campo);
+        const valorB = valorColumna(b, orden.campo);
+        const comparacion = typeof valorA === 'string' ? valorA.localeCompare(valorB, 'es') : valorA - valorB;
+        return orden.descendente ? -comparacion : comparacion;
+    });
+
+    const ordenarPor = (campo) => {
+        setOrden(prev => ({ campo, descendente: prev.campo === campo ? !prev.descendente : campo !== 'nombre' }));
+    };
+
+    const verEquipo = (equipoId) => {
+        router.get('/', anioSeleccionado ? { equipo: equipoId, anio: anioSeleccionado } : { equipo: equipoId });
+    };
+
+    const datosGrafico = [...filas].sort((a, b) => b.total - a.total);
+    const mesEnCurso = new Date().toISOString().slice(0, 7);
+    const incluyeMesEnCurso = resumen.tendenciaMensual.at(-1)?.mes === mesEnCurso;
+    const datosTendencia = resumen.tendenciaMensual.map(m => ({ ...m, etiqueta: formatearMes(m.mes) }));
+
+    return (
+        <>
+            <TarjetaTotales titulo={`Tickets del hospital · ${periodo}`} total={totalHospital} estadosKpi={estadosHospital} />
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                <Tarjeta titulo="Carga por equipo" subtitulo={`Tickets abiertos y cerrados · ${periodo}`}>
+                    {totalHospital > 0 ? (
+                        <>
+                            <ul className="mb-3 flex gap-5">
+                                {[['Abiertos', tema.serie], ['Cerrados', COLOR_CERRADOS]].map(([nombre, color]) => (
+                                    <li key={nombre} className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                        <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                                        {nombre}
+                                    </li>
+                                ))}
+                            </ul>
+                            <div style={{ height: Math.max(200, datosGrafico.length * 38 + 24), width: '100%' }}>
+                                <ResponsiveContainer>
+                                    <BarChart data={datosGrafico} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+                                        <CartesianGrid horizontal={false} stroke={tema.grilla} />
+                                        <XAxis type="number" axisLine={false} tickLine={false} allowDecimals={false} tick={{ fill: tema.ejes, fontSize: 12 }} />
+                                        <YAxis dataKey="nombre" type="category" width={170} axisLine={false} tickLine={false} interval={0} tick={{ fill: tema.textoSecundario, fontSize: 12 }} />
+                                        <Tooltip cursor={{ fill: tema.cursor }} content={<TooltipEquipo />} />
+                                        <Bar dataKey="cerrados" stackId="tickets" fill={COLOR_CERRADOS} stroke={tema.superficie} strokeWidth={2} barSize={18} />
+                                        <Bar dataKey="abiertos" stackId="tickets" fill={tema.serie} stroke={tema.superficie} strokeWidth={2} barSize={18} radius={[0, 4, 4, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </>
+                    ) : (
+                        <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Sin tickets en el período seleccionado.</p>
+                    )}
+                </Tarjeta>
+
+                <Tarjeta
+                    titulo="Tickets cerrados por mes"
+                    subtitulo={`Todo el hospital · ${anioSeleccionado ? `Año ${anioSeleccionado}` : 'Últimos 12 meses'}`}
+                >
+                    {datosTendencia.length > 0 ? (
+                        <>
+                            <div style={{ height: 280, width: '100%' }}>
+                                <ResponsiveContainer>
+                                    <BarChart data={datosTendencia} margin={{ top: 20, right: 8, left: -16, bottom: 0 }}>
+                                        <CartesianGrid vertical={false} stroke={tema.grilla} />
+                                        <XAxis dataKey="etiqueta" axisLine={false} tickLine={false} interval={0} tick={{ fill: tema.ejes, fontSize: 11 }} />
+                                        <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fill: tema.ejes, fontSize: 12 }} />
+                                        <Tooltip cursor={{ fill: tema.cursor }} content={<TooltipGrafico unidad="tickets cerrados" />} />
+                                        <Bar dataKey="cantidad" fill={COLOR_CERRADOS} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                                La ticketera no guarda la fecha de cierre: se usa la última actualización de cada ticket cerrado.
+                                {incluyeMesEnCurso && ' El último mes está en curso, por eso puede verse más bajo.'}
+                            </p>
+                        </>
+                    ) : (
+                        <p className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">Sin cierres para mostrar en el período seleccionado.</p>
+                    )}
+                </Tarjeta>
+            </div>
+
+            {/* COMPARATIVA POR EQUIPO */}
+            <section className="overflow-hidden rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
+                <div className="px-6 pt-5 pb-4">
+                    <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Comparativa por equipo</h2>
+                    <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{periodo} · Ordena con los encabezados y entra al detalle de cada equipo.</p>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                        <thead className="bg-slate-50 dark:bg-slate-800/60 border-y border-slate-200 dark:border-slate-800">
+                            <tr>
+                                {COLUMNAS_COMPARATIVA.map(columna => (
+                                    <th key={columna.campo} className={`px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 whitespace-nowrap ${columna.campo === 'nombre' ? 'text-left' : 'text-right'}`}>
+                                        <button onClick={() => ordenarPor(columna.campo)} className="inline-flex items-center gap-1 uppercase hover:text-slate-900 dark:hover:text-white">
+                                            {columna.esEstado && <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: getEstiloEstado(columna.campo).color }} />}
+                                            {columna.etiqueta}
+                                            {orden.campo === columna.campo && <span aria-hidden="true">{orden.descendente ? '↓' : '↑'}</span>}
+                                        </button>
+                                    </th>
+                                ))}
+                                <th className="px-5 py-3"><span className="sr-only">Acciones</span></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {filasOrdenadas.map(fila => (
+                                <tr key={fila.id} onClick={() => verEquipo(fila.id)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="px-5 py-3.5 whitespace-nowrap font-medium text-slate-900 dark:text-white">{fila.nombre}</td>
+                                    <td className="px-5 py-3.5 whitespace-nowrap text-right font-semibold tabular-nums text-slate-900 dark:text-white">{formatearNumero(fila.total)}</td>
+                                    {ordenEstados.map(nombreEstado => (
+                                        <td key={nombreEstado} className="px-5 py-3.5 whitespace-nowrap text-right tabular-nums text-slate-600 dark:text-slate-300">
+                                            {formatearNumero(fila.por_estado[nombreEstado])}
+                                        </td>
+                                    ))}
+                                    <td className="px-5 py-3.5 whitespace-nowrap">
+                                        <div className="flex items-center justify-end gap-3">
+                                            <div className="h-1.5 w-16 rounded-full bg-slate-100 dark:bg-slate-800">
+                                                <div className="h-1.5 rounded-full" style={{ width: `${fila.tasa}%`, backgroundColor: COLOR_CERRADOS }} />
+                                            </div>
+                                            <span className="w-12 text-right tabular-nums text-slate-600 dark:text-slate-300">{fila.tasa.toLocaleString('es-CL')}%</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-5 py-3.5 whitespace-nowrap text-right">
+                                        <span className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 dark:text-sky-400">
+                                            Ver detalle <Icono nombre="derecha" className="w-4 h-4" />
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </>
+    );
+}
+
+export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, listaTecnicos, listaAnios, listaEstados, anioSeleccionado, equipos, equipoSeleccionado, pedidosPorDepartamento, resumenHospital }) {
     const { auth } = usePage().props;
     const [vista, setVista] = useState('dashboard');
 
@@ -247,21 +481,21 @@ export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, 
 
     // Colores de Recharts (no admite clases de Tailwind)
     const tema = darkMode
-        ? { serie: '#3987e5', grilla: '#2c2c2a', ejes: '#898781', textoSecundario: '#c3c2b7', cursor: 'rgba(255,255,255,0.04)' }
-        : { serie: '#2a78d6', grilla: '#e1e0d9', ejes: '#898781', textoSecundario: '#52514e', cursor: 'rgba(11,11,11,0.04)' };
+        ? { serie: '#3987e5', grilla: '#2c2c2a', ejes: '#898781', textoSecundario: '#c3c2b7', cursor: 'rgba(255,255,255,0.04)', superficie: '#0f172a' }
+        : { serie: '#2a78d6', grilla: '#e1e0d9', ejes: '#898781', textoSecundario: '#52514e', cursor: 'rgba(11,11,11,0.04)', superficie: '#ffffff' };
 
     const estadosKpi = ordenEstados.map(nombreEstado =>
         kpis.por_estado.find(e => e.estado === nombreEstado) || { estado: nombreEstado, cantidad: 0 }
     );
-    const cerrados = estadosKpi.find(e => e.estado === 'Cerrado')?.cantidad || 0;
-    const abiertos = kpis.total - cerrados;
-    const tasaCierre = porcentaje(cerrados, kpis.total);
     const periodo = anioSeleccionado ? `Año ${anioSeleccionado}` : 'Histórico completo';
 
     const navegacion = [
         { id: 'dashboard', etiqueta: 'Gráficos', icono: 'graficos' },
         { id: 'tabla', etiqueta: 'Tabla de tickets', icono: 'tabla' },
+        ...(resumenHospital ? [{ id: 'hospital', etiqueta: 'Resumen del hospital', icono: 'edificio' }] : []),
     ];
+    const esVistaHospital = vista === 'hospital';
+    const titulosVista = { dashboard: 'Gráficos y métricas', tabla: 'Tabla de tickets', hospital: 'Resumen del hospital' };
 
     return (
         <div className={darkMode ? 'dark' : ''}>
@@ -335,14 +569,14 @@ export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, 
                     <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 sm:px-8 py-4">
                         <div className="flex flex-wrap items-center justify-between gap-4">
                             <div>
-                                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-sky-400">{equipoSeleccionado.nombre}</p>
-                                <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-                                    {vista === 'dashboard' ? 'Gráficos y métricas' : 'Tabla de tickets'}
-                                </h1>
+                                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-sky-400">
+                                    {esVistaHospital ? 'Todos los equipos' : equipoSeleccionado.nombre}
+                                </p>
+                                <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{titulosVista[vista]}</h1>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-3">
-                                {equipos.length > 1 && (
+                                {equipos.length > 1 && !esVistaHospital && (
                                     <label className="flex items-center gap-2">
                                         <Icono nombre="edificio" className="w-4 h-4 text-slate-400" />
                                         <span className="sr-only">Equipo</span>
@@ -358,7 +592,7 @@ export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, 
                                     </label>
                                 )}
 
-                                {vista === 'dashboard' && (
+                                {(vista === 'dashboard' || esVistaHospital) && (
                                     <label className="flex items-center gap-2">
                                         <Icono nombre="calendario" className="w-4 h-4 text-slate-400" />
                                         <span className="sr-only">Filtrar gráficos por año</span>
@@ -404,7 +638,7 @@ export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, 
                         </div>
 
                         {/* Navegación en móvil */}
-                        <div className="md:hidden mt-4 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
+                        <div className={`md:hidden mt-4 grid ${navegacion.length > 2 ? 'grid-cols-3' : 'grid-cols-2'} gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1`}>
                             {navegacion.map(item => (
                                 <button
                                     key={item.id}
@@ -426,53 +660,7 @@ export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, 
                             {vista === 'dashboard' && (
                                 <>
                                     {/* RESUMEN GENERAL */}
-                                    <Tarjeta>
-                                        <div className="flex flex-wrap items-end justify-between gap-6">
-                                            <div className="flex items-center gap-4">
-                                                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-sky-400">
-                                                    <Icono nombre="bandeja" className="w-6 h-6" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Tickets en el período · {periodo}</p>
-                                                    <p className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white">{formatearNumero(kpis.total)}</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-8">
-                                                <div>
-                                                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Tasa de cierre</p>
-                                                    <p className="text-2xl font-bold text-slate-900 dark:text-white">{tasaCierre.toLocaleString('es-CL')}%</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Abiertos</p>
-                                                    <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatearNumero(abiertos)}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Barra de composición por estado */}
-                                        {kpis.total > 0 && (
-                                            <div className="mt-6">
-                                                <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                                    {estadosKpi.filter(e => e.cantidad > 0).map(e => (
-                                                        <div
-                                                            key={e.estado}
-                                                            title={`${e.estado}: ${formatearNumero(e.cantidad)} (${porcentaje(e.cantidad, kpis.total)}%)`}
-                                                            style={{ width: `${porcentaje(e.cantidad, kpis.total)}%`, minWidth: 4, backgroundColor: getEstiloEstado(e.estado).color }}
-                                                            className="h-full first:rounded-l-full last:rounded-r-full"
-                                                        />
-                                                    ))}
-                                                </div>
-                                                <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-                                                    {estadosKpi.map(e => (
-                                                        <li key={e.estado} className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                                                            <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: getEstiloEstado(e.estado).color }} />
-                                                            {e.estado}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                        )}
-                                    </Tarjeta>
+                                    <TarjetaTotales titulo={`Tickets en el período · ${periodo}`} total={kpis.total} estadosKpi={estadosKpi} />
 
                                     {/* TARJETAS POR ESTADO */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -722,6 +910,10 @@ export default function DashboardTics({ kpis, cerradosPorTecnico, ticketsTabla, 
                                         )}
                                     </section>
                                 </>
+                            )}
+
+                            {esVistaHospital && resumenHospital && (
+                                <SeccionResumenHospital resumen={resumenHospital} tema={tema} periodo={periodo} anioSeleccionado={anioSeleccionado} />
                             )}
                         </div>
                     </div>

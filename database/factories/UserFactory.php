@@ -48,6 +48,17 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the user is the general director, who sees every team.
+     */
+    public function director(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'rol' => Rol::Director,
+            'equipo_ids' => [],
+        ]);
+    }
+
+    /**
      * Indicate that the user is the head of the given teams.
      *
      * @param  list<int>  $equipoIds

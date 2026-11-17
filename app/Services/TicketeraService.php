@@ -2,9 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\Equipo;
+use Carbon\Carbon;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\JoinClause;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -25,13 +28,99 @@ class TicketeraService
      */
     private function ticketsDelEquipo(int $equipoId, ?string $anioSeleccionado = null): Builder
     {
+        return $this->ticketsDeLosEquipos([$equipoId], $anioSeleccionado);
+    }
+
+    /**
+     * Tickets (alias `t`) atendidos por cualquiera de los equipos; `tt.ticketera_id` indica cuál.
+     *
+     * @param  list<int>  $equipoIds
+     */
+    private function ticketsDeLosEquipos(array $equipoIds, ?string $anioSeleccionado = null): Builder
+    {
         return $this->conexion()->table('ticket as t')
-            ->join('ticketera_ticket as tt', function (JoinClause $join) use ($equipoId) {
+            ->join('ticketera_ticket as tt', function (JoinClause $join) use ($equipoIds) {
                 $join->on('tt.ticket_id', '=', 't.id')
                     ->where('tt.type', 'ticket')
-                    ->where('tt.ticketera_id', $equipoId);
+                    ->whereIn('tt.ticketera_id', $equipoIds);
             })
             ->when($anioSeleccionado, fn (Builder $q) => $q->whereYear('t.created_at', $anioSeleccionado));
+    }
+
+    /**
+     * Comparativa de todos los equipos y tickets cerrados por mes, para el resumen del director general.
+     *
+     * Sin año seleccionado, la tendencia cubre los últimos 12 meses; con año, sus meses hasta hoy.
+     *
+     * @param  Collection<int, Equipo>  $equipos
+     * @return array{porEquipo: list<array{id: int, nombre: string, total: int, por_estado: array<string, int>}>, tendenciaMensual: list<array{mes: string, cantidad: int}>}
+     */
+    public function resumenHospital(Collection $equipos, ?string $anioSeleccionado): array
+    {
+        $equipoIds = $equipos->pluck('id')->all();
+        $estados = $this->conexion()->table('estado')->orderBy('id')->pluck('nombre', 'id');
+
+        $conteosPorEquipo = $this->ticketsDeLosEquipos($equipoIds, $anioSeleccionado)
+            ->select('tt.ticketera_id', 't.estado_id', DB::raw('COUNT(t.id) as cantidad'))
+            ->groupBy('tt.ticketera_id', 't.estado_id')
+            ->get()
+            ->groupBy('ticketera_id');
+
+        $porEquipo = $equipos->map(function (Equipo $equipo) use ($conteosPorEquipo, $estados) {
+            $conteos = $conteosPorEquipo->get($equipo->id, collect());
+
+            return [
+                'id' => $equipo->id,
+                'nombre' => $equipo->nombre,
+                'total' => (int) $conteos->sum('cantidad'),
+                'por_estado' => $estados->mapWithKeys(fn (string $nombre, int $estadoId) => [
+                    $nombre => (int) ($conteos->firstWhere('estado_id', $estadoId)?->cantidad ?? 0),
+                ])->all(),
+            ];
+        })->values()->all();
+
+        return [
+            'porEquipo' => $porEquipo,
+            'tendenciaMensual' => $this->cerradosPorMes($equipoIds, $anioSeleccionado),
+        ];
+    }
+
+    /**
+     * Tickets cerrados en cada mes del período, con los meses sin cierres en cero.
+     *
+     * La ticketera no guarda la fecha de cierre: al cerrar se actualiza el ticket, así que se usa
+     * el `updated_at` de los tickets que siguen cerrados (igual que la columna de cierre de la tabla).
+     *
+     * @param  list<int>  $equipoIds
+     * @return list<array{mes: string, cantidad: int}>
+     */
+    private function cerradosPorMes(array $equipoIds, ?string $anioSeleccionado): array
+    {
+        $mesActual = now()->startOfMonth();
+
+        $meses = $anioSeleccionado
+            ? collect(range(1, 12))
+                ->map(fn (int $mes) => Carbon::create((int) $anioSeleccionado, $mes))
+                ->filter(fn (Carbon $mes) => $mes->lte($mesActual))
+                ->values()
+            : collect(range(11, 0))->map(fn (int $mesesAtras) => $mesActual->copy()->subMonths($mesesAtras));
+
+        if ($meses->isEmpty()) {
+            return [];
+        }
+
+        $cantidadPorMes = $this->ticketsDeLosEquipos($equipoIds)
+            ->join('estado as e', 't.estado_id', '=', 'e.id')
+            ->where('e.nombre', 'Cerrado')
+            ->whereBetween('t.updated_at', [$meses->first()->copy()->startOfMonth(), $meses->last()->copy()->endOfMonth()])
+            ->select(DB::raw('DATE_FORMAT(t.updated_at, "%Y-%m") as mes'), DB::raw('COUNT(t.id) as cantidad'))
+            ->groupBy('mes')
+            ->pluck('cantidad', 'mes');
+
+        return $meses->map(fn (Carbon $mes) => [
+            'mes' => $mes->format('Y-m'),
+            'cantidad' => (int) ($cantidadPorMes[$mes->format('Y-m')] ?? 0),
+        ])->all();
     }
 
     /**

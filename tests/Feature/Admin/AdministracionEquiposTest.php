@@ -22,7 +22,7 @@ class AdministracionEquiposTest extends TestCase
 
         $response->assertInertia(fn (Assert $page) => $page
             ->component('Admin/Equipos')
-            ->has('equipos', 11)
+            ->has('equipos', 10)
             ->where('equipos.3.nombre', 'Informática / TICS')
         );
     }
